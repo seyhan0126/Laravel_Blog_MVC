@@ -1,0 +1,29 @@
+before_script:
+  - export CURRENT_DATE=$(date +%Y%m%d%H%M%S)
+  - 'which which || yum -y install which' # CentOS
+  - 'which ssh-agent || yum -y install openssh-client' # CentOS
+  - mkdir -p ~/.ssh
+  - eval $(ssh-agent -s)
+  - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+  - chmod g-w ~/.ssh/config
+
+  - "[[ -f composer.json ]] && composer install -o -q"
+
+stages:
+  - deploy
+
+deploy_staging:
+  stage: deploy
+  script:
+    - ssh-add <(echo "$STAGING_PRIVATE_KEY")
+    - chmod -R 755 "$(pwd -P)" # fix permissions before deploy, otherwise it's security violation and ssh key doesn't work
+    - "chmod -fR 777 tmp/ logs/ data/ || true"
+    - rsync -azhqPe 'ssh -p 33654' --exclude-from '.rsync_exclude.txt' --stats --bwlimit=5000 "$(pwd -P)"/ $STAGING_USER@$STAGING_IP:$STAGING_DIRECTORY
+    #- ssh -p33654 $STAGING_USER@$STAGING_IP "cd $STAGING_DIRECTORY && chmod -fR 777 tmp/ logs/ data/ || true"
+    - curl -L -s $STAGING_CACHE_URL > /dev/null
+    - eval $(ssh-agent -k)
+  environment:
+    name: staging
+    url: https://seyhan.eurocoders.com/
+  only:
+    - master
